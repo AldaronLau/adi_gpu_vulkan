@@ -1,5 +1,4 @@
-# "adi_gpu_vulkan" crate - Licensed under the MIT LICENSE
-#  * Copyright (c) 2018  Jeron A. Lau <jeron.lau@plopgrizzly.com>
+# "adi_gpu_vulkan" - Aldaron's Device Interface / GPU / Vulkan
 #                             _        _
 #                            /@\——————/@\
 # .———  .                   |   o    o   |     .————      .            .
@@ -10,32 +9,29 @@
 # |     |   ———   |       |                |    ————  |   | :——— :———  |   |
 #                 |        \              /                              __/
 #                           ¯————————————¯
+#
+# Copyright Jeron A. Lau 2018.
+# Distributed under the Boost Software License, Version 1.0.
+# (See accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
 
 [package]
 name = "adi_gpu_vulkan"
-version = "0.5.3"
+version = "0.6.0"
 authors = [
 	"Jeron A. Lau <jeron.lau@plopgrizzly.com>"
 ]
-
-license = "MIT"
+license = "BSL-1.0"
 documentation = "https://docs.rs/adi_gpu_vulkan"
-homepage = "http://plopgrizzly.com/adi_gpu_vulkan"
+homepage = "https://plopgrizzly.com/adi_gpu_vulkan"
 repository = "https://github.com/plopgrizzly/adi_gpu_vulkan"
-
-readme = "README.md"
+readme = "readme.md"
 description = "Vulkan implementation for adi_gpu"
 keywords = [ "vulkan", "graphics", "gui", "hardware", "rendering" ]
 categories = ["gui", "game-engines", "hardware-support", "multimedia::video",
 	"rendering::graphics-api"]
 
-exclude = [
-	"examples/*", "code_of_conduct.md", "contributing.md", ".gitignore",
-	"_config.yml", "issue_template.md", "icon.png", "icon.ico"
-]
-
 [dependencies]
-adi_gpu_base = "0.6"
+adi_gpu_base = "0.7"
 asi_vulkan = "0.7"
-ami = "0.8"
 libc = "0.2" # TODO: Remove dependency by having all ffi code in asi crates.

@@ -1,11 +1,15 @@
-// "adi_gpu_vulkan" crate - Licensed under the MIT LICENSE
-//  * Copyright (c) 2018  Jeron A. Lau <jeron.lau@plopgrizzly.com>
+// "adi_gpu_vulkan" - Aldaron's Device Interface / GPU / Vulkan
+//
+// Copyright Jeron A. Lau 2018.
+// Distributed under the Boost Software License, Version 1.0.
+// (See accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+//
+//! Vulkan implementation for adi_gpu.
 
 use std::{ mem };
 
-// use awi::Window;
-use adi_gpu_base as base;
-use adi_gpu_base::WindowConnection;
+use adi_gpu_base::{ WindowConnection, Mat4, IDENTITY, Vec3 };
 
 mod ffi;
 
@@ -20,8 +24,6 @@ use asi_vulkan::TransformUniform;
 use asi_vulkan::FogUniform;
 use asi_vulkan::Sprite;
 use asi_vulkan::Vk;
-
-use ami::{ Mat4, IDENTITY };
 
 use ShapeHandle;
 
@@ -75,15 +77,23 @@ pub struct Shape {
 	num_buffers: usize,
 	buffers: [VkBuffer; 3],
 	instance: Sprite,
-	bbox: ::ami::BBox,
-	model: usize,
 	fans: Vec<(u32, u32)>,
+	transform: Mat4, // Transformation matrix.
+}
+
+impl ::adi_gpu_base::Point for Shape {
+	fn point(&self) -> Vec3 {
+		Vec3::new(
+			self.transform.0[12],
+			self.transform.0[13],
+			self.transform.0[14]
+		)
+	}
 }
 
 pub struct Model {
 	shape: asi_vulkan::Buffer,
 	vertex_count: u32,
-	points: Vec<f32>,
 	fans: Vec<(u32, u32)>,
 }
 
@@ -95,12 +105,6 @@ pub struct TexCoords {
 pub struct Gradient {
 	vertex_buffer: Buffer,
 	vertex_count: u32,
-}
-
-impl ::ami::Collider for Shape {
-	fn bbox(&self) -> ::ami::BBox {
-		self.bbox
-	}
 }
 
 impl Shape {
@@ -451,16 +455,12 @@ fn draw_shape(connection: &mut Vk, shape: &Shape) {
 
 pub struct Renderer {
 	vw: Vw,
-	ar: f64,
-	opaque_octree: ::ami::Octree<Shape>,
-	alpha_octree: ::ami::Octree<Shape>,
+	ar: f32,
+	opaque_ind: Vec<u32>,
+	alpha_ind: Vec<u32>,
+	opaque_vec: Vec<Shape>,
+	alpha_vec: Vec<Shape>,
 	gui_vec: Vec<Shape>,
-	opaque_sorted: Vec<u32>,
-	alpha_sorted: Vec<u32>,
-//	opaque_points: ::ami::Points,
-//	alpha_points: ::ami::Points,
-//	opaque_shapes: Vec<Shape>,
-//	alpha_shapes: Vec<Shape>,
 	models: Vec<Model>,
 	texcoords: Vec<TexCoords>,
 	gradients: Vec<Gradient>,
@@ -480,7 +480,6 @@ pub struct Renderer {
 	camera_memory: asi_vulkan::Memory<TransformUniform>,
 	effect_memory: asi_vulkan::Memory<FogUniform>,
 	clear_color: (f32, f32, f32),
-	frustum: ::ami::Frustum,
 	xyz: (f32,f32,f32),
 	rotate_xyz: (f32,f32,f32),
 }
@@ -561,7 +560,7 @@ impl Renderer {
 			vw.render_pass, vw.width, vw.height,
 			&complex_vert, &complex_frag, 1, 3, false);
 
-		let ar = vw.width as f64 / vw.height as f64;
+		let ar = vw.width as f32 / vw.height as f32;
 		let projection = ::base::projection(ar, 90.0);
 		let (camera_memory, effect_memory) = unsafe {
 			asi_vulkan::vw_camera_new(&mut vw.connection,
@@ -572,11 +571,11 @@ impl Renderer {
 		let mut renderer = Renderer {
 			vw, ar, projection,
 			camera_memory, effect_memory,
-			alpha_octree: ::ami::Octree::new(),
-			opaque_octree: ::ami::Octree::new(),
+			alpha_ind: Vec::new(),
+			opaque_ind: Vec::new(),
+			alpha_vec: Vec::new(),
+			opaque_vec: Vec::new(),
 			gui_vec: Vec::new(),
-			opaque_sorted: Vec::new(),
-			alpha_sorted: Vec::new(),
 			gradients: Vec::new(),
 			models: Vec::new(),
 			texcoords: Vec::new(),
@@ -588,11 +587,6 @@ impl Renderer {
 			style_tinted, style_natinted,
 			style_complex, style_nacomplex,
 			clear_color,
-			frustum: ::ami::Frustum::new(
-				::ami::Vec3::new(0.0, 0.0, 0.0),
-				100.0 /* TODO: Based on fog.0 + fog.1 */, 90.0,
-				(2.0 * ((45.0 * ::std::f64::consts::PI / 180.0).tan() / ar).atan()) as f32,
-				0.0, 0.0), // TODO: FAR CLIP PLANE
 			xyz: (0.0, 0.0, 0.0),
 			rotate_xyz: (0.0, 0.0, 0.0),
 		};
@@ -607,10 +601,11 @@ impl Renderer {
 	}
 
 	pub fn update(&mut self) {
-		let matrix = IDENTITY
-			.rotate(self.rotate_xyz.0, self.rotate_xyz.1,
-				self.rotate_xyz.2)
-			.translate(self.xyz.0, self.xyz.1, self.xyz.2);
+// TODO
+//		let matrix = IDENTITY
+//			.rotate(self.rotate_xyz.0, self.rotate_xyz.1,
+//				self.rotate_xyz.2)
+//			.translate(self.xyz.0, self.xyz.1, self.xyz.2);
 
 		let mut presenting_complete_sem = unsafe {
 			asi_vulkan::new_semaphore(&mut self.vw.connection)
@@ -638,30 +633,24 @@ impl Renderer {
 			);
 		}
 
-		let frustum = matrix * self.frustum;
-
-//		self.opaque_octree.print();
-//		println!("FRUSTUM {:?}", frustum);
-
-		self.opaque_octree.nearest(&mut self.opaque_sorted, frustum);
-		for id in self.opaque_sorted.iter() {
-//			println!("drawing opaque....");
-
-			let shape = &self.opaque_octree[*id];
-
+		// sort nearest
+		::adi_gpu_base::zsort(&mut self.opaque_ind, &self.opaque_vec,
+			true, ::Vec3::new(self.xyz.0, self.xyz.1, self.xyz.2));
+		for shape in self.opaque_ind.iter() {
+			let shape = &self.opaque_vec[*shape as usize];
 			draw_shape(&mut self.vw.connection, shape);
 		}
 
-		self.alpha_octree.farthest(&mut self.alpha_sorted, frustum);
-		for id in self.alpha_sorted.iter() {
-//			println!("drawing alpha....");
-			let shape = &self.alpha_octree[*id];
-
+		// sort farthest
+		::adi_gpu_base::zsort(&mut self.alpha_ind, &self.alpha_vec,
+			false, ::Vec3::new(self.xyz.0, self.xyz.1, self.xyz.2));
+		for shape in self.alpha_ind.iter() {
+			let shape = &self.alpha_vec[*shape as usize];
 			draw_shape(&mut self.vw.connection, shape);
 		}
 
+		// No need to sort gui elements.
 		for shape in self.gui_vec.iter() {
-//			println!("drawing gui....");
 			draw_shape(&mut self.vw.connection, shape);
 		}
 
@@ -704,13 +693,7 @@ impl Renderer {
 	pub fn resize(&mut self, size: (u32, u32)) {
 		self.vw.width = size.0;
 		self.vw.height = size.1;
-		self.ar = size.0 as f64 / size.1 as f64;
-		self.frustum = ::ami::Frustum::new(
-			self.frustum.center,
-			self.frustum.radius,
-			90.0, (2.0 * ((45.0 * ::std::f64::consts::PI / 180.0)
-				.tan() / self.ar).atan()) as f32,
-			self.frustum.xrot, self.frustum.yrot);
+		self.ar = size.0 as f32 / size.1 as f32;
 
 		swapchain_delete(&mut self.vw);
 		swapchain_resize(&mut self.vw);
@@ -746,12 +729,10 @@ impl Renderer {
 
 		let a = self.models.len();
 
-		let points = vertices.to_vec();
-
 		self.models.push(Model {
 			shape,
 			vertex_count: vertices.len() as u32 / 4,
-			points, fans,
+			fans,
 		});
 
 		a
@@ -806,10 +787,6 @@ impl Renderer {
 			panic!("TexCoord length doesn't match vertex length");
 		}
 
-		let bbox = base::vertices_to_bbox(
-			self.models[model].points.as_slice(), mat4
-		);
-
 		// Add an instance
 		let instance = unsafe {
 			Sprite::new(
@@ -820,7 +797,7 @@ impl Renderer {
 					&self.style_natexture
 				},
 				TransformFullUniform {
-					mat4: mat4.to_f32_array(),
+					mat4: mat4.0,
 					hcam: fog as u32 + camera as u32,
 				},
 				&self.camera_memory, // TODO: at shader creation, not shape creation
@@ -840,17 +817,23 @@ impl Renderer {
 				self.texcoords[texcoords].vertex_buffer.buffer(),
 				unsafe { mem::uninitialized() }
 			],
-			model, bbox,
 			fans: self.models[model].fans.clone(),
+			transform: mat4,
 		};
 
 		if !camera && !fog {
 			self.gui_vec.push(shape);
 			ShapeHandle::Gui(self.gui_vec.len() as u32 - 1)
 		} else if alpha {
-			ShapeHandle::Alpha(self.alpha_octree.add(shape))
+			let index = self.alpha_vec.len() as u32;
+			self.alpha_vec.push(shape);
+			self.alpha_ind.push(index);
+			ShapeHandle::Alpha(index)
 		} else {
-			ShapeHandle::Opaque(self.opaque_octree.add(shape))
+			let index = self.opaque_vec.len() as u32;
+			self.opaque_vec.push(shape);
+			self.opaque_ind.push(index);
+			ShapeHandle::Opaque(index)
 		}
 	}
 
@@ -858,10 +841,6 @@ impl Renderer {
 		alpha: bool, fog: bool, camera: bool)
 		-> ShapeHandle
 	{
-		let bbox = base::vertices_to_bbox(
-			self.models[model].points.as_slice(), mat4
-		);
-
 		// Add an instance
 		let instance = unsafe {
 			Sprite::new(
@@ -874,7 +853,7 @@ impl Renderer {
 				TransformAndColorUniform {
 					vec4: color,
 					hcam: fog as u32 + camera as u32,
-					mat4: mat4.to_f32_array(),
+					mat4: mat4.0,
 				},
 				&self.camera_memory,
 				Some(&self.effect_memory),
@@ -891,17 +870,23 @@ impl Renderer {
 				unsafe { mem::uninitialized() },
 				unsafe { mem::uninitialized() }
 			],
-			model, bbox,
 			fans: self.models[model].fans.clone(),
+			transform: mat4,
 		};
 
 		if !camera && !fog {
 			self.gui_vec.push(shape);
 			ShapeHandle::Gui(self.gui_vec.len() as u32 - 1)
 		} else if alpha {
-			ShapeHandle::Alpha(self.alpha_octree.add(shape))
+			let index = self.alpha_vec.len() as u32;
+			self.alpha_vec.push(shape);
+			self.alpha_ind.push(index);
+			ShapeHandle::Alpha(index)
 		} else {
-			ShapeHandle::Opaque(self.opaque_octree.add(shape))
+			let index = self.opaque_vec.len() as u32;
+			self.opaque_vec.push(shape);
+			self.opaque_ind.push(index);
+			ShapeHandle::Opaque(index)
 		}
 	}
 
@@ -915,10 +900,6 @@ impl Renderer {
 			panic!("TexCoord length doesn't match gradient length");
 		}
 
-		let bbox = base::vertices_to_bbox(
-			self.models[model].points.as_slice(), mat4
-		);
-
 		// Add an instance
 		let instance = unsafe {
 			Sprite::new(
@@ -929,7 +910,7 @@ impl Renderer {
 					&self.style_nagradient
 				},
 				TransformFullUniform {
-					mat4: mat4.to_f32_array(),
+					mat4: mat4.0,
 					hcam: fog as u32 + camera as u32,
 				},
 				&self.camera_memory,
@@ -947,17 +928,23 @@ impl Renderer {
 				self.gradients[colors].vertex_buffer.buffer(),
 				unsafe { mem::uninitialized() }
 			],
-			model, bbox,
 			fans: self.models[model].fans.clone(),
+			transform: mat4,
 		};
 
 		if !camera && !fog {
 			self.gui_vec.push(shape);
 			ShapeHandle::Gui(self.gui_vec.len() as u32 - 1)
 		} else if alpha {
-			ShapeHandle::Alpha(self.alpha_octree.add(shape))
+			let index = self.alpha_vec.len() as u32;
+			self.alpha_vec.push(shape);
+			self.alpha_ind.push(index);
+			ShapeHandle::Alpha(index)
 		} else {
-			ShapeHandle::Opaque(self.opaque_octree.add(shape))
+			let index = self.opaque_vec.len() as u32;
+			self.opaque_vec.push(shape);
+			self.opaque_ind.push(index);
+			ShapeHandle::Opaque(index)
 		}
 	}
 
@@ -971,17 +958,13 @@ impl Renderer {
 			panic!("TexCoord length doesn't match vertex length");
 		}
 
-		let bbox = base::vertices_to_bbox(
-			self.models[model].points.as_slice(), mat4
-		);
-
 		// Add an instance
 		let instance = unsafe {
 			Sprite::new(
 				&mut self.vw.connection,
 				&self.style_faded,
 				TransformAndFadeUniform {
-					mat4: mat4.to_f32_array(),
+					mat4: mat4.0,
 					hcam: fog as u32 + camera as u32,
 					fade: fade_factor,
 				},
@@ -1002,15 +985,18 @@ impl Renderer {
 				self.texcoords[texcoords].vertex_buffer.buffer(),
 				unsafe { mem::uninitialized() }
 			],
-			model, bbox,
 			fans: self.models[model].fans.clone(),
+			transform: mat4,
 		};
 
 		if !camera && !fog {
 			self.gui_vec.push(shape);
 			ShapeHandle::Gui(self.gui_vec.len() as u32 - 1)
 		} else {
-			ShapeHandle::Alpha(self.alpha_octree.add(shape))
+			let index = self.alpha_vec.len() as u32;
+			self.alpha_vec.push(shape);
+			self.alpha_ind.push(index);
+			ShapeHandle::Alpha(index)
 		}
 	}
 
@@ -1025,10 +1011,6 @@ impl Renderer {
 			panic!("TexCoord length doesn't match vertex length");
 		}
 
-		let bbox = base::vertices_to_bbox(
-			self.models[model].points.as_slice(), mat4
-		);
-
 		// Add an instance
 		let instance = unsafe {
 			Sprite::new(
@@ -1039,7 +1021,7 @@ impl Renderer {
 					&self.style_natinted
 				},
 				TransformAndColorUniform {
-					mat4: mat4.to_f32_array(),
+					mat4: mat4.0,
 					hcam: fog as u32 + camera as u32,
 					vec4: color,
 				},
@@ -1060,17 +1042,23 @@ impl Renderer {
 				self.texcoords[texcoords].vertex_buffer.buffer(),
 				unsafe { mem::uninitialized() }
 			],
-			model, bbox,
 			fans: self.models[model].fans.clone(),
+			transform: mat4,
 		};
 
 		if !camera && !fog {
 			self.gui_vec.push(shape);
 			ShapeHandle::Gui(self.gui_vec.len() as u32 - 1)
 		} else if alpha {
-			ShapeHandle::Alpha(self.alpha_octree.add(shape))
+			let index = self.alpha_vec.len() as u32;
+			self.alpha_vec.push(shape);
+			self.alpha_ind.push(index);
+			ShapeHandle::Alpha(index)
 		} else {
-			ShapeHandle::Opaque(self.opaque_octree.add(shape))
+			let index = self.opaque_vec.len() as u32;
+			self.opaque_vec.push(shape);
+			self.opaque_ind.push(index);
+			ShapeHandle::Opaque(index)
 		}
 	}
 
@@ -1086,10 +1074,6 @@ impl Renderer {
 			panic!("TexCoord length doesn't match vertex length");
 		}
 
-		let bbox = base::vertices_to_bbox(
-			self.models[model].points.as_slice(), mat4
-		);
-
 		// Add an instance
 		let instance = unsafe {
 			Sprite::new(
@@ -1100,7 +1084,7 @@ impl Renderer {
 					&self.style_nacomplex
 				},
 				TransformFullUniform {
-					mat4: mat4.to_f32_array(),
+					mat4: mat4.0,
 					hcam: fog as u32 + camera as u32,
 				},
 				&self.camera_memory,
@@ -1120,81 +1104,53 @@ impl Renderer {
 				self.texcoords[texcoords].vertex_buffer.buffer(),
 				self.gradients[colors].vertex_buffer.buffer(),
 			],
-			model, bbox,
 			fans: self.models[model].fans.clone(),
+			transform: mat4,
 		};
 
 		if !camera && !fog {
 			self.gui_vec.push(shape);
 			ShapeHandle::Gui(self.gui_vec.len() as u32 - 1)
 		} else if alpha {
-			ShapeHandle::Alpha(self.alpha_octree.add(shape))
+			let index = self.alpha_vec.len() as u32;
+			self.alpha_vec.push(shape);
+			self.alpha_ind.push(index);
+			ShapeHandle::Alpha(index)
 		} else {
-			ShapeHandle::Opaque(self.opaque_octree.add(shape))
+			let index = self.opaque_vec.len() as u32;
+			self.opaque_vec.push(shape);
+			self.opaque_ind.push(index);
+			ShapeHandle::Opaque(index)
 		}
 	}
 
-	pub fn transform(&mut self, shape: &mut ShapeHandle, transform: ::Mat4){
+	pub fn transform(&mut self, shape: &ShapeHandle, transform: ::Mat4) {
 		let uniform = TransformUniform {
-			mat4: transform.to_f32_array(),
+			mat4: transform.0,
 		};
 
 		match shape {
-			ShapeHandle::Opaque(ref mut x) => {
-				let model = self.opaque_octree[*x].model;
-				let bbox = base::vertices_to_bbox(
-					self.models[model].points.as_slice(),
-					transform);
-
-				self.opaque_octree[*x].bbox = bbox;
-				let shape = self.opaque_octree.remove(*x);
-				*x = self.opaque_octree.add(shape);
-
+			ShapeHandle::Opaque(x) => {
+				let x = *x as usize; // for indexing
+				self.opaque_vec[x].transform = transform;
 				ffi::copy_memory(&mut self.vw.connection,
-					self.opaque_octree[*x].instance.uniform_memory.memory(),
+					self.opaque_vec[x].instance.uniform_memory.memory(),
 					&uniform);
 			},
-			ShapeHandle::Alpha(ref mut x) => {
-				let model = self.alpha_octree[*x].model;
-				let bbox = base::vertices_to_bbox(
-					self.models[model].points.as_slice(),
-					transform);
-
-				self.alpha_octree[*x].bbox = bbox;
-				let shape = self.alpha_octree.remove(*x);
-				*x = self.alpha_octree.add(shape);
-
+			ShapeHandle::Alpha(x) => {
+				let x = *x as usize; // for indexing
+				self.alpha_vec[x].transform = transform;
 				ffi::copy_memory(&mut self.vw.connection,
-					self.alpha_octree[*x].instance.uniform_memory.memory(),
+					self.alpha_vec[x].instance.uniform_memory.memory(),
 					&uniform);
 			},
 			ShapeHandle::Gui(x) => {
 				let x = *x as usize; // for indexing
-
-				let model = self.gui_vec[x].model;
-				let bbox = base::vertices_to_bbox(
-					self.models[model].points.as_slice(),
-					transform);
-				self.gui_vec[x].bbox = bbox;
-
+				self.gui_vec[x].transform = transform;
 				ffi::copy_memory(&mut self.vw.connection,
 					self.gui_vec[x].instance.uniform_memory.memory(),
 					&uniform);
 			},
-		}
-	}
-
-	pub fn collision(&self, shape: &ShapeHandle, force: &mut ::ami::Vec3)
-		-> Option<u32>
-	{
-		match shape {
-			ShapeHandle::Opaque(x) => {
-				self.opaque_octree.bounce_test(*x, force)
-			},
-			ShapeHandle::Alpha(x) => {
-				self.alpha_octree.bounce_test(*x, force)
-			},
-			_ => panic!("No gui collision detection!")
 		}
 	}
 
@@ -1207,8 +1163,7 @@ impl Renderer {
 		self.camera_memory.data.mat4 = (IDENTITY
 			.translate(-self.xyz.0, -self.xyz.1, -self.xyz.2)
 			.rotate(-self.rotate_xyz.0, -self.rotate_xyz.1,
-				-self.rotate_xyz.2) * self.projection)
-			.to_f32_array();
+				-self.rotate_xyz.2) * self.projection).0;
 
 		self.camera_memory.update(&mut self.vw.connection);
 	}

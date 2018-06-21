@@ -1,12 +1,14 @@
-// "adi_gpu_vulkan" crate - Licensed under the MIT LICENSE
-//  * Copyright (c) 2018  Jeron A. Lau <jeron.lau@plopgrizzly.com>
+// "adi_gpu_vulkan" - Aldaron's Device Interface / GPU / Vulkan
+//
+// Copyright Jeron A. Lau 2018.
+// Distributed under the Boost Software License, Version 1.0.
+// (See accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
 //
 //! Vulkan implementation for adi_gpu.
 
 // #![no_std]
 
-#[macro_use]
-extern crate ami;
 extern crate asi_vulkan;
 extern crate adi_gpu_base;
 extern crate libc;
@@ -20,9 +22,8 @@ pub use base::Model;
 pub use base::TexCoords;
 pub use base::Texture;
 
-use ami::*;
 use adi_gpu_base as base;
-use adi_gpu_base::{ ShapeHandle, Graphic };
+use adi_gpu_base::{ ShapeHandle, Graphic, Mat4, Vec3 };
 
 /// To render anything with adi_gpu, you have to make a `Display`
 pub struct Display {
@@ -146,12 +147,8 @@ impl base::Display for Display {
 			texture.0, tc.0, tints.0, blending, fog, camera))
 	}
 
-	fn transform(&mut self, shape: &mut Shape, transform: Mat4) {
-		self.renderer.transform(&mut base::get_shape(shape), transform);
-	}
-
-	fn collision(&self, shape: &Shape, force: &mut Vec3) -> Option<u32> {
-		self.renderer.collision(&base::get_shape(shape), force)
+	fn transform(&mut self, shape: &Shape, transform: Mat4) {
+		self.renderer.transform(&base::get_shape(shape), transform);
 	}
 
 	fn resize(&mut self, wh: (u32, u32)) -> () {
