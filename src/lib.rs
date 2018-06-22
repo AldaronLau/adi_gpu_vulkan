@@ -23,7 +23,7 @@ pub use base::TexCoords;
 pub use base::Texture;
 
 use adi_gpu_base as base;
-use adi_gpu_base::{ ShapeHandle, Graphic, Mat4, Vec3 };
+use adi_gpu_base::*;
 
 /// To render anything with adi_gpu, you have to make a `Display`
 pub struct Display {
@@ -58,7 +58,7 @@ impl base::Display for Display {
 		None
 	}
 
-	fn camera(&mut self, xyz: (f32,f32,f32), rotate_xyz: (f32,f32,f32)) {
+	fn camera(&mut self, xyz: Vec3, rotate_xyz: Vec3) {
 		self.renderer.set_camera(xyz, rotate_xyz);
 		self.renderer.camera();
 	}
@@ -94,7 +94,7 @@ impl base::Display for Display {
 	}
 
 	#[inline(always)]
-	fn shape_solid(&mut self, model: &Model, transform: Mat4,
+	fn shape_solid(&mut self, model: &Model, transform: Transform,
 		color: [f32; 4], blending: bool, fog: bool,
 		camera: bool) -> Shape
 	{
@@ -103,7 +103,7 @@ impl base::Display for Display {
 	}
 
 	#[inline(always)]
-	fn shape_gradient(&mut self, model: &Model, transform: Mat4,
+	fn shape_gradient(&mut self, model: &Model, transform: Transform,
 		colors: Gradient, blending: bool, fog: bool,
 		camera: bool) -> Shape
 	{
@@ -112,7 +112,7 @@ impl base::Display for Display {
 	}
 
 	#[inline(always)]
-	fn shape_texture(&mut self, model: &Model, transform: Mat4,
+	fn shape_texture(&mut self, model: &Model, transform: Transform,
 		texture: &Texture, tc: TexCoords, blending: bool,
 		fog: bool, camera: bool) -> Shape
 	{
@@ -121,7 +121,7 @@ impl base::Display for Display {
 	}
 
 	#[inline(always)]
-	fn shape_faded(&mut self, model: &Model, transform: Mat4,
+	fn shape_faded(&mut self, model: &Model, transform: Transform,
 		texture: &Texture, tc: TexCoords, alpha: f32,
 		fog: bool, camera: bool) -> Shape
 	{
@@ -130,7 +130,7 @@ impl base::Display for Display {
 	}
 
 	#[inline(always)]
-	fn shape_tinted(&mut self, model: &Model, transform: Mat4,
+	fn shape_tinted(&mut self, model: &Model, transform: Transform,
 		texture: &Texture, tc: TexCoords, tint: [f32; 4], blending: bool,
 		fog: bool, camera: bool) -> Shape
 	{
@@ -139,7 +139,7 @@ impl base::Display for Display {
 	}
 
 	#[inline(always)]
-	fn shape_complex(&mut self, model: &Model, transform: Mat4,
+	fn shape_complex(&mut self, model: &Model, transform: Transform,
 		texture: &Texture, tc: TexCoords, tints: Gradient,
 		blending: bool, fog: bool, camera: bool) -> Shape
 	{
@@ -147,7 +147,7 @@ impl base::Display for Display {
 			texture.0, tc.0, tints.0, blending, fog, camera))
 	}
 
-	fn transform(&mut self, shape: &Shape, transform: Mat4) {
+	fn transform(&mut self, shape: &Shape, transform: Transform) {
 		self.renderer.transform(&base::get_shape(shape), transform);
 	}
 

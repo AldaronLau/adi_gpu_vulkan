@@ -9,7 +9,7 @@
 
 use std::{ mem };
 
-use adi_gpu_base::{ WindowConnection, Mat4, IDENTITY, Vec3 };
+use adi_gpu_base::*;
 
 mod ffi;
 
@@ -78,16 +78,13 @@ pub struct Shape {
 	buffers: [VkBuffer; 3],
 	instance: Sprite,
 	fans: Vec<(u32, u32)>,
-	transform: Mat4, // Transformation matrix.
+	transform: Transform, // Transformation matrix.
 }
 
 impl ::adi_gpu_base::Point for Shape {
 	fn point(&self) -> Vec3 {
-		Vec3::new(
-			self.transform.0[12],
-			self.transform.0[13],
-			self.transform.0[14]
-		)
+		// Position vector at origin * object transform.
+		(self.transform.0 * vec4!(0f32, 0f32, 0f32, 1f32)).xyz()
 	}
 }
 
@@ -476,12 +473,12 @@ pub struct Renderer {
 	style_natinted: Style,
 	style_complex: Style,
 	style_nacomplex: Style,
-	projection: ::Mat4,
+	projection: Transform,
 	camera_memory: asi_vulkan::Memory<TransformUniform>,
 	effect_memory: asi_vulkan::Memory<FogUniform>,
 	clear_color: (f32, f32, f32),
-	xyz: (f32,f32,f32),
-	rotate_xyz: (f32,f32,f32),
+	xyz: Vec3,
+	rotate_xyz: Vec3,
 }
 
 impl Renderer {
@@ -561,7 +558,7 @@ impl Renderer {
 			&complex_vert, &complex_frag, 1, 3, false);
 
 		let ar = vw.width as f32 / vw.height as f32;
-		let projection = ::base::projection(ar, 90.0);
+		let projection = ::base::projection(ar, 0.5 * PI);
 		let (camera_memory, effect_memory) = unsafe {
 			asi_vulkan::vw_camera_new(&mut vw.connection,
 				(clear_color.0, clear_color.1, clear_color.2,
@@ -587,8 +584,8 @@ impl Renderer {
 			style_tinted, style_natinted,
 			style_complex, style_nacomplex,
 			clear_color,
-			xyz: (0.0, 0.0, 0.0),
-			rotate_xyz: (0.0, 0.0, 0.0),
+			xyz: vec3!(0.0, 0.0, 0.0),
+			rotate_xyz: vec3!(0.0, 0.0, 0.0),
 		};
 
 		renderer.camera();
@@ -601,12 +598,6 @@ impl Renderer {
 	}
 
 	pub fn update(&mut self) {
-// TODO
-//		let matrix = IDENTITY
-//			.rotate(self.rotate_xyz.0, self.rotate_xyz.1,
-//				self.rotate_xyz.2)
-//			.translate(self.xyz.0, self.xyz.1, self.xyz.2);
-
 		let mut presenting_complete_sem = unsafe {
 			asi_vulkan::new_semaphore(&mut self.vw.connection)
 		};
@@ -635,7 +626,7 @@ impl Renderer {
 
 		// sort nearest
 		::adi_gpu_base::zsort(&mut self.opaque_ind, &self.opaque_vec,
-			true, ::Vec3::new(self.xyz.0, self.xyz.1, self.xyz.2));
+			true, self.xyz);
 		for shape in self.opaque_ind.iter() {
 			let shape = &self.opaque_vec[*shape as usize];
 			draw_shape(&mut self.vw.connection, shape);
@@ -643,7 +634,7 @@ impl Renderer {
 
 		// sort farthest
 		::adi_gpu_base::zsort(&mut self.alpha_ind, &self.alpha_vec,
-			false, ::Vec3::new(self.xyz.0, self.xyz.1, self.xyz.2));
+			false, self.xyz);
 		for shape in self.alpha_ind.iter() {
 			let shape = &self.alpha_vec[*shape as usize];
 			draw_shape(&mut self.vw.connection, shape);
@@ -698,7 +689,7 @@ impl Renderer {
 		swapchain_delete(&mut self.vw);
 		swapchain_resize(&mut self.vw);
 
-		self.projection = ::base::projection(self.ar, 90.0);
+		self.projection = ::base::projection(self.ar, 0.5 * PI);
 		self.camera();
 	}
 
@@ -777,7 +768,7 @@ impl Renderer {
 		a
 	}
 
-	pub fn textured(&mut self, model: usize, mat4: Mat4,
+	pub fn textured(&mut self, model: usize, mat4: Transform,
 		texture: usize, texcoords: usize, alpha: bool,
 		fog: bool, camera: bool) -> ShapeHandle
 	{
@@ -797,7 +788,7 @@ impl Renderer {
 					&self.style_natexture
 				},
 				TransformFullUniform {
-					mat4: mat4.0,
+					mat4: mat4.into(),
 					hcam: fog as u32 + camera as u32,
 				},
 				&self.camera_memory, // TODO: at shader creation, not shape creation
@@ -837,7 +828,7 @@ impl Renderer {
 		}
 	}
 
-	pub fn solid(&mut self, model: usize, mat4: Mat4, color: [f32; 4],
+	pub fn solid(&mut self, model: usize, mat4: Transform, color: [f32; 4],
 		alpha: bool, fog: bool, camera: bool)
 		-> ShapeHandle
 	{
@@ -853,7 +844,7 @@ impl Renderer {
 				TransformAndColorUniform {
 					vec4: color,
 					hcam: fog as u32 + camera as u32,
-					mat4: mat4.0,
+					mat4: mat4.into(),
 				},
 				&self.camera_memory,
 				Some(&self.effect_memory),
@@ -890,7 +881,7 @@ impl Renderer {
 		}
 	}
 
-	pub fn gradient(&mut self, model: usize, mat4: Mat4, colors: usize,
+	pub fn gradient(&mut self, model: usize, mat4: Transform, colors: usize,
 		alpha: bool, fog: bool, camera: bool)
 		-> ShapeHandle
 	{
@@ -910,7 +901,7 @@ impl Renderer {
 					&self.style_nagradient
 				},
 				TransformFullUniform {
-					mat4: mat4.0,
+					mat4: mat4.into(),
 					hcam: fog as u32 + camera as u32,
 				},
 				&self.camera_memory,
@@ -948,7 +939,7 @@ impl Renderer {
 		}
 	}
 
-	pub fn faded(&mut self, model: usize, mat4: Mat4, texture: usize,
+	pub fn faded(&mut self, model: usize, mat4: Transform, texture: usize,
 		texcoords: usize, fade_factor: f32, fog: bool,
 		camera: bool) -> ShapeHandle
 	{
@@ -964,7 +955,7 @@ impl Renderer {
 				&mut self.vw.connection,
 				&self.style_faded,
 				TransformAndFadeUniform {
-					mat4: mat4.0,
+					mat4: mat4.into(),
 					hcam: fog as u32 + camera as u32,
 					fade: fade_factor,
 				},
@@ -1000,7 +991,7 @@ impl Renderer {
 		}
 	}
 
-	pub fn tinted(&mut self, model: usize, mat4: Mat4,
+	pub fn tinted(&mut self, model: usize, mat4: Transform,
 		texture: usize, texcoords: usize, color: [f32; 4],
 		alpha: bool, fog: bool, camera: bool)
 		-> ShapeHandle
@@ -1021,7 +1012,7 @@ impl Renderer {
 					&self.style_natinted
 				},
 				TransformAndColorUniform {
-					mat4: mat4.0,
+					mat4: mat4.into(),
 					hcam: fog as u32 + camera as u32,
 					vec4: color,
 				},
@@ -1062,7 +1053,7 @@ impl Renderer {
 		}
 	}
 
-	pub fn complex(&mut self, model: usize, mat4: Mat4,
+	pub fn complex(&mut self, model: usize, mat4: Transform,
 		texture: usize, texcoords: usize, colors: usize, alpha: bool,
 		fog: bool, camera: bool) -> ShapeHandle
 	{
@@ -1084,7 +1075,7 @@ impl Renderer {
 					&self.style_nacomplex
 				},
 				TransformFullUniform {
-					mat4: mat4.0,
+					mat4: mat4.into(),
 					hcam: fog as u32 + camera as u32,
 				},
 				&self.camera_memory,
@@ -1124,9 +1115,9 @@ impl Renderer {
 		}
 	}
 
-	pub fn transform(&mut self, shape: &ShapeHandle, transform: ::Mat4) {
+	pub fn transform(&mut self, shape: &ShapeHandle, transform: Transform) {
 		let uniform = TransformUniform {
-			mat4: transform.0,
+			mat4: transform.into(),
 		};
 
 		match shape {
@@ -1154,16 +1145,17 @@ impl Renderer {
 		}
 	}
 
-	pub fn set_camera(&mut self, xyz: (f32,f32,f32), rxyz: (f32,f32,f32)) {
+	pub fn set_camera(&mut self, xyz: Vec3, rxyz: Vec3) {
 		self.xyz = xyz;
 		self.rotate_xyz = rxyz;
 	}
 
 	pub fn camera(&mut self) {
-		self.camera_memory.data.mat4 = (IDENTITY
-			.translate(-self.xyz.0, -self.xyz.1, -self.xyz.2)
-			.rotate(-self.rotate_xyz.0, -self.rotate_xyz.1,
-				-self.rotate_xyz.2) * self.projection).0;
+		self.camera_memory.data.mat4 = Transform::IDENTITY
+			.t(vec3!()-self.xyz) // Move camera - TODO: negation operator?
+			.r(vec3!()-self.rotate_xyz) // Rotate camera - TODO: negation operator?
+			.m(self.projection.0) // Apply projection to camera
+			.into(); // convert to f32 array
 
 		self.camera_memory.update(&mut self.vw.connection);
 	}

@@ -4,6 +4,9 @@ Vulkan implementation for adi_gpu
 ## [Contributing](http://plopgrizzly.com/contributing/en#contributing)
 
 ## Change Log
+### 0.7
+* Update to adi\_gpu\_base 0.8.
+
 ### 0.6
 * Update adi\_gpu\_base.
 * Update asi\_vulkan to fix different texturing behavior from adi\_gpu\_opengl
