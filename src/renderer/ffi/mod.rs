@@ -16,7 +16,7 @@ pub mod create_surface;
 
 use asi_vulkan;
 use asi_vulkan::types::*;
-use asi_vulkan::Vk;
+use asi_vulkan::Vulkan;
 
 /*pub struct VulkanRenderer {
 	native: vulkan::Vulkan,
@@ -34,8 +34,8 @@ impl ::RenderOps for VulkanRenderer {
 	}
 }*/
 
-pub fn copy_memory<T>(connection: &mut Vk, vk_memory: VkDeviceMemory, data: &T)
-	where T: Clone
+pub fn copy_memory<T>(connection: &mut Vulkan, vk_memory: VkDeviceMemory,
+	data: &T) where T: Clone
 {
 	let mapped : *mut T = unsafe {
 		asi_vulkan::map_memory(connection, vk_memory, !0)
@@ -51,7 +51,7 @@ pub fn copy_memory<T>(connection: &mut Vk, vk_memory: VkDeviceMemory, data: &T)
 	}
 }
 
-pub fn copy_memory_pitched<T>(connection: &mut Vk, vk_memory: VkDeviceMemory,
+pub fn copy_memory_pitched<T>(connection: &mut Vulkan, vk_memory: VkDeviceMemory,
 	data: &[T], width: isize, height: isize, pitch: isize) where T: Clone
 {
 	let mapped : *mut T = unsafe {

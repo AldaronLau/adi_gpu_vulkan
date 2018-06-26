@@ -32,7 +32,7 @@ pub struct Display {
 }
 
 pub fn new<G: AsRef<Graphic>>(title: &str, icon: G)
-	-> Result<Box<Display>, &'static str>
+	-> Result<Box<Display>, String>
 {
 	let window = adi_gpu_base::Window::new(title, icon.as_ref(),
 		None);

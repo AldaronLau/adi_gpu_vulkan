@@ -4,6 +4,10 @@ Vulkan implementation for adi_gpu
 ## [Contributing](http://plopgrizzly.com/contributing/en#contributing)
 
 ## Change Log
+### 0.8
+* Update to adi\_gpu\_base 0.9.
+* Update asi\_vulkan: Now uses Rc & RefCell instead of ami.
+
 ### 0.7
 * Update to adi\_gpu\_base 0.8.
 

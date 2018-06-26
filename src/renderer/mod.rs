@@ -23,7 +23,7 @@ use asi_vulkan::Buffer;
 use asi_vulkan::TransformUniform;
 use asi_vulkan::FogUniform;
 use asi_vulkan::Sprite;
-use asi_vulkan::Vk;
+use asi_vulkan::Vulkan;
 
 use ShapeHandle;
 
@@ -45,7 +45,7 @@ use ShapeHandle;
 }
 
 pub struct Vw {
-	connection: Vk,
+	connection: Vulkan,
 	present_queue: VkQueue,
 	swapchain: VkSwapchainKHR,
 	width:u32, height:u32, // Swapchain Dimensions.
@@ -314,9 +314,7 @@ fn set_texture(vw: &mut Vw, texture: &mut Texture, rgba: &[u32]) {
 }*/
 
 impl Vw {
-	pub fn new(window_connection: WindowConnection)
-		-> Result<Vw, &'static str>
-	{
+	pub fn new(window_connection: WindowConnection) -> Result<Vw, String> {
 		// START BLOCK: TODO: this should all be condensed to one
 		// asi_vulkan function for safety.
 		let mut connection = ffi::vulkan::Vulkan::new()? .0;
@@ -433,7 +431,7 @@ impl Vw {
 	}
 }
 
-fn draw_shape(connection: &mut Vk, shape: &Shape) {
+fn draw_shape(connection: &mut Vulkan, shape: &Shape) {
 	unsafe {
 		asi_vulkan::cmd_bind_vb(connection,
 			&shape.buffers[..shape.num_buffers]);
@@ -483,7 +481,7 @@ pub struct Renderer {
 
 impl Renderer {
 	pub fn new(window_connection: WindowConnection,
-		clear_color: (f32, f32, f32)) -> Result<Renderer, &'static str>
+		clear_color: (f32, f32, f32)) -> Result<Renderer, String>
 	{
 		let mut vw = Vw::new(window_connection)?;
 

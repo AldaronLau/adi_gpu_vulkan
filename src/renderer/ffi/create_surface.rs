@@ -12,9 +12,9 @@
 use adi_gpu_base::WindowConnection;
 
 use asi_vulkan;
-use asi_vulkan::Vk;
+use asi_vulkan::Vulkan;
 
-pub fn create_surface(c: &mut Vk, connection: WindowConnection) {
+pub fn create_surface(c: &mut Vulkan, connection: WindowConnection) {
 	match connection {
 		WindowConnection::Xcb(connection,window) => {
 			asi_vulkan::new_surface_xcb(c, connection, window)
