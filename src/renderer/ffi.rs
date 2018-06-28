@@ -10,31 +10,13 @@
 use std::{ mem };
 use libc::memcpy;
 
-pub mod vulkan;
 // TODO: absorb into ffi, only once internal todo is resolved.
-pub mod create_surface;
 
 use asi_vulkan;
 use asi_vulkan::types::*;
-use asi_vulkan::Vulkan;
+use asi_vulkan::Gpu;
 
-/*pub struct VulkanRenderer {
-	native: vulkan::Vulkan,
-}
-
-impl ::RenderOps for VulkanRenderer {
-	#[allow(unused)]
-	fn new(app_name: &str, window: ::awi::WindowConnection) -> Self {
-		let native = vulkan::Vulkan::new(app_name).unwrap();
-
-		VulkanRenderer { native }
-	}
-
-	fn update(&self) -> () {
-	}
-}*/
-
-pub fn copy_memory<T>(connection: &mut Vulkan, vk_memory: VkDeviceMemory,
+pub fn copy_memory<T>(connection: &Gpu, vk_memory: VkDeviceMemory,
 	data: &T) where T: Clone
 {
 	let mapped : *mut T = unsafe {
@@ -51,7 +33,7 @@ pub fn copy_memory<T>(connection: &mut Vulkan, vk_memory: VkDeviceMemory,
 	}
 }
 
-pub fn copy_memory_pitched<T>(connection: &mut Vulkan, vk_memory: VkDeviceMemory,
+pub fn copy_memory_pitched<T>(connection: &Gpu, vk_memory: VkDeviceMemory,
 	data: &[T], width: isize, height: isize, pitch: isize) where T: Clone
 {
 	let mapped : *mut T = unsafe {

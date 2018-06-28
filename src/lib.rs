@@ -34,17 +34,17 @@ pub struct Display {
 pub fn new<G: AsRef<Graphic>>(title: &str, icon: G)
 	-> Result<Box<Display>, String>
 {
-	let window = adi_gpu_base::Window::new(title, icon.as_ref(),
-		None);
-	let renderer = renderer::Renderer::new(window.get_connection(),
-		(0.0, 0.0, 0.0))?;
+	let (renderer, window) = renderer::Renderer::new(
+		Some((title, icon.as_ref())),
+		vec3!(0.0, 0.0, 0.0)
+	)?;
 
 	Ok(Box::new(Display { window, renderer }))
 }
 
 impl base::Display for Display {
 	fn color(&mut self, color: (f32, f32, f32)) {
-		self.renderer.bg_color(color);
+		self.renderer.bg_color(vec3!(color.0, color.1, color.2));
 	}
 
 	fn update(&mut self) -> Option<adi_gpu_base::Input> {

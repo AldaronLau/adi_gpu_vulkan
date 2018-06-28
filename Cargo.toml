@@ -33,5 +33,5 @@ categories = ["gui", "game-engines", "hardware-support", "multimedia::video",
 
 [dependencies]
 adi_gpu_base = "0.9"
-asi_vulkan = "0.8"
+asi_vulkan = { path = "../asi_vulkan" } # "0.8"
 libc = "0.2" # TODO: Remove dependency by having all ffi code in asi crates.
