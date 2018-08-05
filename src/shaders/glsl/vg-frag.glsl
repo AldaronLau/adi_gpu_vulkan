@@ -8,7 +8,7 @@
 
 layout (binding = 0) uniform UniformBuffer {
 	mat4 models_tfm; // The Models' Transform Matrix
-	float alpha;
+	vec4 color;
 	int has_camera;
 } uniforms;
 layout (binding = 1) uniform Camera {
@@ -20,22 +20,24 @@ layout (binding = 2) uniform Fog {
 } fog;
 layout (binding = 3) uniform sampler2D tex;
 
-layout (location = 0) in vec4 pos;
-layout (location = 1) in vec4 texpos;
+layout (location = 0) in vec4 qcp;
+layout (location = 1) in float z;
+layout (location = 2) in vec4 tint;
 
-layout (location = 0) out vec4 texcoord;
-layout (location = 1) out float z;
+layout (location = 0) out vec4 frag_color;
 
 void main() {
-	texcoord = vec4(texpos.xyz, texpos.w * uniforms.alpha);
+	float x = qcp.x * 0.5 + qcp.y;
+	if(x * x >= 
 
-	vec4 place = uniforms.models_tfm * vec4(pos.xyz, 1.0);
+	vec4 out_color = vec4(sampled.rgb, sampled.a * texcoord.a) * tint;
 
-	if(uniforms.has_camera >= 1) {
-		gl_Position = camera.matrix * place;
+	if(uniforms.has_camera == 2) {
+		// Fog Calculation
+		float linear = clamp((z-fog.range.x) / fog.range.y, 0.0, 1.0);
+		float curved = linear * linear * linear;
+		frag_color = mix(out_color, fog.fog, curved);
 	} else {
-		gl_Position = place;
+		frag_color = out_color;
 	}
-
-	z = length(gl_Position.xyz);
 }

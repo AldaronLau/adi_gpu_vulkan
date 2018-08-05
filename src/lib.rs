@@ -1,10 +1,8 @@
-// "adi_gpu_vulkan" - Aldaron's Device Interface / GPU / Vulkan
-//
 // Copyright Jeron A. Lau 2018.
-// Distributed under the Boost Software License, Version 1.0.
-// (See accompanying file LICENSE_1_0.txt or copy at
+// Dual-licensed under either the MIT License or the Boost Software License,
+// Version 1.0.  (See accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
-//
+
 //! Vulkan implementation for adi_gpu.
 
 // #![no_std]
@@ -31,11 +29,9 @@ pub struct Display {
 	renderer: renderer::Renderer,
 }
 
-pub fn new<G: AsRef<Graphic>>(title: &str, icon: G)
-	-> Result<Box<Display>, String>
-{
+pub fn new(title: &str, icon: &afi::Video) -> Result<Box<Display>, String> {
 	let (renderer, window) = renderer::Renderer::new(
-		Some((title, icon.as_ref())),
+		Some((title, icon)),
 		vec3!(0.0, 0.0, 0.0)
 	)?;
 
@@ -75,10 +71,11 @@ impl base::Display for Display {
 		}
 	}
 
-	fn texture(&mut self, graphic: &Graphic) -> Texture {
-		let (w, h, pixels) = graphic.as_ref().as_slice();
+	fn texture(&mut self, wh: (u16,u16), graphic: &VFrame) -> Texture {
+		let (w, h) = wh;
+		let pixels = graphic.0.as_slice();
 
-		Texture(self.renderer.texture(w, h, pixels))
+		Texture(self.renderer.texture(w, h, pixels), wh.0, wh.1)
 	}
 
 	fn gradient(&mut self, colors: &[f32]) -> Gradient {
@@ -89,8 +86,17 @@ impl base::Display for Display {
 		TexCoords(self.renderer.texcoords(texcoords))
 	}
 
-	fn set_texture(&mut self, texture: &mut Texture, pixels: &[u32]) {
-		self.renderer.set_texture(texture.0, pixels);
+	fn set_texture(&mut self, texture: &mut Texture, wh: (u16,u16),
+		graphic: &VFrame)
+	{
+		if texture.1 == wh.0 && texture.2 == wh.1 {
+			self.renderer.set_texture(texture.0,
+				graphic.0.as_slice());
+		} else {
+			// resize
+			self.renderer.resize_texture(texture.0, wh.0, wh.1,
+				graphic.0.as_slice());
+		}
 	}
 
 	#[inline(always)]
@@ -147,15 +153,20 @@ impl base::Display for Display {
 			texture.0, tc.0, tints.0, blending, fog, camera))
 	}
 
+	#[inline(always)]
+	fn drop_shape(&mut self, shape: &Shape) {
+		self.renderer.drop_shape(get_shape(&shape));
+	}
+
 	fn transform(&mut self, shape: &Shape, transform: Transform) {
 		self.renderer.transform(&base::get_shape(shape), transform);
 	}
 
-	fn resize(&mut self, wh: (u32, u32)) -> () {
+	fn resize(&mut self, wh: (u16, u16)) -> () {
 		self.renderer.resize(wh);
 	}
 
-	fn wh(&self) -> (u32, u32) {
+	fn wh(&self) -> (u16, u16) {
 		self.window.wh()
 	}
 }

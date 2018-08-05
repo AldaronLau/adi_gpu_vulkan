@@ -8,7 +8,7 @@
 
 layout (binding = 0) uniform UniformBuffer {
 	mat4 models_tfm; // The Models' Transform Matrix
-	float alpha;
+	vec4 color;
 	int has_camera;
 } uniforms;
 layout (binding = 1) uniform Camera {
@@ -21,13 +21,15 @@ layout (binding = 2) uniform Fog {
 layout (binding = 3) uniform sampler2D tex;
 
 layout (location = 0) in vec4 pos;
-layout (location = 1) in vec4 texpos;
+layout (location = 1) in vec4 qcp; // quadratic bezier control point
 
-layout (location = 0) out vec4 texcoord;
+layout (location = 0) out vec4 coord;
 layout (location = 1) out float z;
+layout (location = 2) out vec4 tint;
 
 void main() {
-	texcoord = vec4(texpos.xyz, texpos.w * uniforms.alpha);
+	coord = texpos;
+	tint = uniforms.color;
 
 	vec4 place = uniforms.models_tfm * vec4(pos.xyz, 1.0);
 

@@ -1,7 +1,9 @@
+[![Plop Grizzly](https://plopgrizzly.com/images/logo-bar.png)](https://plopgrizzly.com)
+
 # [Aldaron's Device Interface / GPU / Vulkan](https://crates.io/crates/adi_gpu_vulkan)
 Vulkan implementation for adi_gpu
 
-## [Contributing](http://plopgrizzly.com/contributing/en#contributing)
+This project is part of [ADI](https://crates.io/crates/adi).
 
 ## Change Log
 ### 0.8
@@ -19,5 +21,3 @@ Vulkan implementation for adi_gpu
 
 ### 0.5
 * Update to newest adi\_gpu\_base.
-
-## Developed by [Plop Grizzly](http://plopgrizzly.com)

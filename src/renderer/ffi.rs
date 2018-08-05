@@ -1,14 +1,7 @@
-// "adi_gpu_vulkan" - Aldaron's Device Interface / GPU / Vulkan
-//
 // Copyright Jeron A. Lau 2018.
-// Distributed under the Boost Software License, Version 1.0.
-// (See accompanying file LICENSE_1_0.txt or copy at
+// Dual-licensed under either the MIT License or the Boost Software License,
+// Version 1.0.  (See accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
-//
-//! Vulkan implementation for adi_gpu.
-
-use std::{ mem };
-use libc::memcpy;
 
 // TODO: absorb into ffi, only once internal todo is resolved.
 
@@ -33,10 +26,10 @@ pub fn copy_memory<T>(connection: &Gpu, vk_memory: VkDeviceMemory,
 	}
 }
 
-pub fn copy_memory_pitched<T>(connection: &Gpu, vk_memory: VkDeviceMemory,
-	data: &[T], width: isize, height: isize, pitch: isize) where T: Clone
+pub fn copy_memory_pitched(connection: &Gpu, vk_memory: VkDeviceMemory,
+	data: &[u8], width: usize, height: usize, pitch: usize)
 {
-	let mapped : *mut T = unsafe {
+	let mapped : *mut u8 = unsafe {
 		asi_vulkan::map_memory(connection, vk_memory, !0)
 	};
 
@@ -45,11 +38,14 @@ pub fn copy_memory_pitched<T>(connection: &Gpu, vk_memory: VkDeviceMemory,
 	}
 
 	for i in 0..height {
-		unsafe {
-			memcpy(mapped.offset(i * pitch / mem::size_of::<T>()
-					as isize) as *mut _,
-				data.as_ptr().offset(i * width) as *const _,
-				width as usize * mem::size_of::<T>());
+		for j in 0..width {
+			for k in 0..4 {
+				unsafe {
+					*(mapped.offset((i * pitch + j * 4 + k)
+							as isize))
+						= data[(i * width + j) * 4 + k];
+				}
+			}
 		}
 	}
 

@@ -1,11 +1,9 @@
-// "adi_gpu_vulkan" - Aldaron's Device Interface / GPU / Vulkan
-//
 // Copyright Jeron A. Lau 2018.
-// Distributed under the Boost Software License, Version 1.0.
-// (See accompanying file LICENSE_1_0.txt or copy at
+// Dual-licensed under either the MIT License or the Boost Software License,
+// Version 1.0.  (See accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
-//
-//! Vulkan implementation for adi_gpu.
+
+use afi::Video;
 
 use std::{ mem };
 
@@ -46,17 +44,13 @@ use ShapeHandle;
 
 pub struct Vw {
 	connection: Gpu,
-	width:u32, height:u32, // Swapchain Dimensions.
 	present_images: [VkImage; 2], // 2 for double-buffering
 	frame_buffers: [VkFramebuffer; 2], // 2 for double-buffering
-	color_format: VkFormat,
 	image_count: u32, // 1 (single-buffering) or 2 (double-buffering)
-	submit_fence: asi_vulkan::Fence, // The submit fence
 	present_image_views: [VkImageView; 2], // 2 for double-buffering
 	ms_image: Image,
 	depth_image: Image,
 	render_pass: VkRenderPass,
-	present_mode: VkPresentModeKHR,
 }
 
 /// A texture on the GPU.
@@ -64,8 +58,8 @@ pub struct Texture {
 	mappable_image: Image,
 	image: Option<Image>,
 //	view: VkImageView,
-	pub(super) w: u32,
-	pub(super) h: u32,
+	pub(super) w: u16,
+	pub(super) h: u16,
 	pitch: u32,
 	staged: bool,
 }
@@ -145,13 +139,11 @@ impl Shape {
 	}*/
 }
 
-fn swapchain_resize(connection: &Gpu,
-	image_count: &mut u32, size: (u32, u32),
-	present_images: &mut [VkImage; 2], color_format: &VkFormat,
-	present_mode: &VkPresentModeKHR,
+fn swapchain_resize(connection: &Gpu, image_count: &mut u32,
+	present_images: &mut [VkImage; 2],
 	present_image_views: &mut [VkImageView; 2],
 	frame_buffers: &mut [VkFramebuffer; 2])
-	-> (asi_vulkan::Fence, Image, Image, VkRenderPass)
+	-> (Image, Image, VkRenderPass)
 {
 	unsafe {
 		let submit_fence;
@@ -162,18 +154,13 @@ fn swapchain_resize(connection: &Gpu,
 		// Link swapchain to vulkan instance.
 		asi_vulkan::create_swapchain(
 			connection,
-			size.0,
-			size.1,
 			image_count,
-			color_format.clone(),
-			present_mode.clone(),
 			&mut present_images[0]
 		);
 
 		// Link Image Views for each framebuffer
 		submit_fence = asi_vulkan::create_image_view(
 			connection,
-			&color_format,
 			*image_count,
 			present_images,
 			present_image_views,
@@ -183,22 +170,16 @@ fn swapchain_resize(connection: &Gpu,
 		depth_image = asi_vulkan::create_depth_buffer(
 			connection,
 			&submit_fence,
-			size.0,
-			size.1,
 		);
 
 		// Create multisampling buffer
 		ms_image = asi_vulkan::create_ms_buffer(
 			connection,
-			&color_format,
-			size.0,
-			size.1,
 		);
 
 		// Link Render Pass to swapchain
 		render_pass = asi_vulkan::create_render_pass(
 			connection,
-			&color_format,
 		);
 
 		// Link Framebuffers to swapchain
@@ -209,12 +190,10 @@ fn swapchain_resize(connection: &Gpu,
 			present_image_views,
 			&ms_image,
 			&depth_image,
-			size.0,
-			size.1,
 			frame_buffers,
 		);
 
-		(submit_fence, depth_image, ms_image, render_pass)
+		(depth_image, ms_image, render_pass)
 	}
 }
 
@@ -230,12 +209,13 @@ fn swapchain_delete(vw: &mut Vw) {
 	}
 }
 
-fn new_texture(vw: &mut Vw, width: u32, height: u32) -> Texture {
+fn new_texture(vw: &mut Vw, width: u16, height: u16) -> Texture {
 //	let mut format_props = unsafe { mem::uninitialized() };
 	let staged = !vw.connection.sampled();
 
 	let mappable_image = asi_vulkan::Image::new(
-		&mut vw.connection, width, height, VkFormat::R8g8b8a8Unorm,
+		&mut vw.connection, width as u32, height as u32,
+		VkFormat::R8g8b8a8Srgb, // Because VkColorSpace is always Srgb
 		VkImageTiling::Linear,
 		if staged { VkImageUsage::TransferSrcBit }
 		else { VkImageUsage::SampledBit },
@@ -252,7 +232,7 @@ fn new_texture(vw: &mut Vw, width: u32, height: u32) -> Texture {
 
 	let image = if staged {
 		Some(asi_vulkan::Image::new(
-			&mut vw.connection, width, height,
+			&mut vw.connection, width as u32, height as u32,
 			VkFormat::R8g8b8a8Unorm,
 			VkImageTiling::Optimal,
 			VkImageUsage::TransferDstAndUsage,
@@ -268,14 +248,14 @@ fn new_texture(vw: &mut Vw, width: u32, height: u32) -> Texture {
 	}
 }
 
-fn set_texture(vw: &mut Vw, texture: &mut Texture, rgba: &[u32]) {
+fn set_texture(vw: &mut Vw, texture: &mut Texture, rgba: &[u8]) {
 	ffi::copy_memory_pitched(&mut vw.connection,
 		texture.image
 			.as_ref()
 			.unwrap_or(&texture.mappable_image)
 			.memory(),
-		rgba, texture.w as isize,
-		texture.h as isize, texture.pitch as isize);
+		rgba, texture.w as usize, texture.h as usize,
+		texture.pitch as usize);
 
 	if texture.staged {
 		// Use optimal tiled image - create from linear tiled image
@@ -313,21 +293,15 @@ fn set_texture(vw: &mut Vw, texture: &mut Texture, rgba: &[u32]) {
 }*/
 
 impl Vw {
-	pub fn new(window: Option<(&str, &Graphic)>, rgb: Vec3)
+	pub fn new(window: Option<(&str, &Video)>, rgb: Vec3)
 		-> Result<(Vw, Window), String>
 	{
 		let (mut connection, window)
 			= asi_vulkan::Gpu::new(window, rgb)?;
 
 		// END BLOCK 2
-		let color_format = unsafe {
-			asi_vulkan::get_color_format(&mut connection)
-		};
 		let mut image_count = unsafe {
 			asi_vulkan::get_buffering(&mut connection)
-		};
-		let present_mode = unsafe {
-			asi_vulkan::get_present_mode(&mut connection)
 		};
 
 		// Prepare Swapchain
@@ -335,22 +309,18 @@ impl Vw {
 		let mut present_image_views = [unsafe { mem::zeroed() }; 2];
 		let mut frame_buffers: [VkFramebuffer; 2]
 			= [unsafe { mem::uninitialized() }; 2];
-		let width = 640; // TODO w
-		let height = 360; // TODO h
 
-		let (submit_fence, depth_image, ms_image, render_pass)
+		let (depth_image, ms_image, render_pass)
 			= swapchain_resize(&connection,
-				&mut image_count, (width, height),
-				&mut present_images, &color_format,
-				&present_mode,
+				&mut image_count,
+				&mut present_images,
 				&mut present_image_views, &mut frame_buffers);
 
 		let vw = Vw {
 			connection,
-			width, height, present_images, frame_buffers,
-			color_format, image_count, submit_fence,
+			present_images, frame_buffers,
+			image_count,
 			present_image_views, ms_image, depth_image, render_pass,
-			present_mode,
 		};
 
 		Ok((vw, window))
@@ -407,7 +377,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-	pub fn new(window: Option<(&str, &Graphic)>, rgb: Vec3)
+	pub fn new(window: Option<(&str, &Video)>, mut rgb: Vec3)
 		-> Result<(Renderer, Window), String>
 	{
 		let (mut vw, window) = Vw::new(window, rgb)?;
@@ -478,7 +448,7 @@ impl Renderer {
 			vw.render_pass, &complex_vert, &complex_frag, 1, 3,
 			false);
 
-		let ar = vw.width as f32 / vw.height as f32;
+		let ar = vw.connection.ar();
 		let projection = ::base::projection(ar, 0.5 * PI);
 		let (camera_memory, effect_memory) = unsafe {
 			asi_vulkan::vw_camera_new(&mut vw.connection,
@@ -515,34 +485,26 @@ impl Renderer {
 	}
 
 	pub fn bg_color(&mut self, rgb: Vec3) {
+		self.clear_color = (rgb.x, rgb.y, rgb.z);
 		self.vw.connection.color(rgb);
+		self.fog_color(rgb.x, rgb.y, rgb.z);
 	}
 
 	pub fn update(&mut self) {
-		let mut presenting_complete_sem = unsafe {
-			asi_vulkan::new_semaphore(&self.vw.connection)
-		};
-
 		let rendering_complete_sem = unsafe {
 			asi_vulkan::new_semaphore(&self.vw.connection)
 		};
 
+		let fence = unsafe { asi_vulkan::fence::new(&self.vw.connection) };
 		let next_image_index = unsafe {
-			asi_vulkan::get_next_image(
-				&self.vw.connection,
-				&mut presenting_complete_sem,
-			)
+			asi_vulkan::get_next_image(&self.vw.connection, fence)
 		};
 
 		unsafe {
 			asi_vulkan::draw_begin(&self.vw.connection,
 				self.vw.render_pass,
 				self.vw.present_images[next_image_index as usize],
-				self.vw.frame_buffers[next_image_index as usize],
-				self.vw.width,
-				self.vw.height,
-				self.clear_color.0, self.clear_color.1,
-				self.clear_color.2
+				self.vw.frame_buffers[next_image_index as usize]
 			);
 		}
 
@@ -588,34 +550,30 @@ impl Renderer {
 		}
 
 		unsafe {
+			// Actually present the image to the screen.
 			asi_vulkan::queue_present(&self.vw.connection,
-				rendering_complete_sem,
 				next_image_index);
+
+			asi_vulkan::fence::wait(&self.vw.connection, fence);
+			asi_vulkan::fence::drop(&self.vw.connection, fence);
 
 			asi_vulkan::drop_semaphore(&self.vw.connection,
 				rendering_complete_sem);
-
-			asi_vulkan::drop_semaphore(&self.vw.connection,
-				presenting_complete_sem);
 
 			asi_vulkan::wait_idle(&self.vw.connection);
 		}
 	}
 
-	pub fn resize(&mut self, size: (u32, u32)) {
-		self.vw.width = size.0;
-		self.vw.height = size.1;
-		self.ar = size.0 as f32 / size.1 as f32;
-
+	pub fn resize(&mut self, size: (u16, u16)) {
 		swapchain_delete(&mut self.vw);
-		let (submit_fence, depth_image, ms_image, render_pass)
+		let (depth_image, ms_image, render_pass)
 			= swapchain_resize(&self.vw.connection,
-				&mut self.vw.image_count, size,
-				&mut self.vw.present_images, &self.vw.color_format,
-				&self.vw.present_mode,
-				&mut self.vw.present_image_views, &mut self.vw.frame_buffers);
+				&mut self.vw.image_count,
+				&mut self.vw.present_images,
+				&mut self.vw.present_image_views,
+				&mut self.vw.frame_buffers);
 
-		self.vw.submit_fence = submit_fence;
+		self.ar = size.0 as f32 / size.1 as f32;
 		self.vw.depth_image = depth_image;
 		self.vw.ms_image = ms_image;
 		self.vw.render_pass = render_pass;
@@ -624,7 +582,7 @@ impl Renderer {
 		self.camera();
 	}
 
-	pub fn texture(&mut self, width: u32, height: u32, rgba: &[u32])
+	pub fn texture(&mut self, width: u16, height: u16, rgba: &[u8])
 		-> usize
 	{
 		let mut texture = new_texture(&mut self.vw, width, height);
@@ -636,8 +594,17 @@ impl Renderer {
 		a
 	}
 
-	pub fn set_texture(&mut self, texture: usize, rgba: &[u32]) {
+	pub fn set_texture(&mut self, texture: usize, rgba: &[u8]) {
 		set_texture(&mut self.vw, &mut self.textures[texture], rgba);
+	}
+
+	pub fn resize_texture(&mut self, texture_id: usize, width: u16,
+		height: u16, rgba: &[u8])
+	{
+		println!("RESIZE TX");
+		let mut texture = new_texture(&mut self.vw, width, height);
+		set_texture(&mut self.vw, &mut texture, rgba);
+		self.textures[texture_id] = texture;
 	}
 
 	/// Push a model (collection of vertices) into graphics memory.
@@ -726,7 +693,7 @@ impl Renderer {
 				Some(&self.effect_memory),
 				Some(self.textures[texture].image.as_ref()
 					.unwrap_or(&self.textures[texture]
-						.mappable_image)),
+						.mappable_image).clone()),
 				true, // 1 texure
 			)
 		};
@@ -894,7 +861,7 @@ impl Renderer {
 				Some(&self.effect_memory),
 				Some(self.textures[texture].image.as_ref()
 					.unwrap_or(&self.textures[texture]
-						.mappable_image)),
+						.mappable_image).clone()),
 				true, // 1 texure
 			)
 		};
@@ -951,7 +918,7 @@ impl Renderer {
 				Some(&self.effect_memory),
 				Some(self.textures[texture].image.as_ref()
 					.unwrap_or(&self.textures[texture]
-						.mappable_image)),
+						.mappable_image).clone()),
 				true, // 1 texure
 			)
 		};
@@ -1013,7 +980,7 @@ impl Renderer {
 				Some(&self.effect_memory),
 				Some(self.textures[texture].image.as_ref()
 					.unwrap_or(&self.textures[texture]
-						.mappable_image)),
+						.mappable_image).clone()),
 				true, // 1 texure
 			)
 		};
@@ -1043,6 +1010,26 @@ impl Renderer {
 			self.opaque_vec.push(shape);
 			self.opaque_ind.push(index);
 			ShapeHandle::Opaque(index)
+		}
+	}
+
+	pub fn drop_shape(&mut self, shape: ShapeHandle) {
+		match shape {
+			ShapeHandle::Opaque(x) => {
+				let index = self.opaque_ind.iter()
+					.position(|y| *y == x).unwrap();
+				self.opaque_ind.remove(index);
+			},
+			ShapeHandle::Alpha(x) => {
+				let index = self.alpha_ind.iter()
+					.position(|y| *y == x).unwrap();
+				self.alpha_ind.remove(index);
+			},
+			ShapeHandle::Gui(x) => {
+				// TODO: make it obvious that there's only meant
+				// to be 1 GUI object.
+				self.gui_vec.clear();
+			},
 		}
 	}
 
@@ -1092,10 +1079,14 @@ impl Renderer {
 	}
 
 	pub fn fog(&mut self, fog: (f32, f32)) -> () {
-		self.effect_memory.data.fogc = [self.clear_color.0,
-			self.clear_color.1, self.clear_color.2, 1.0];
 		self.effect_memory.data.fogr = [fog.0, fog.1];
+		let rgb = (self.clear_color.0, self.clear_color.1,
+			self.clear_color.2);
+		self.fog_color(rgb.0, rgb.1, rgb.2);
+	}
 
+	fn fog_color(&mut self, r: f32, g: f32, b: f32) {
+		self.effect_memory.data.fogc = [r, g, b, 1.0];
 		self.effect_memory.update(&self.vw.connection);
 	}
 }
